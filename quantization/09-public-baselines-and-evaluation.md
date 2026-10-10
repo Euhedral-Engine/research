@@ -60,18 +60,16 @@ within a source. Hugging Face rows are via summary.
 | Not found | doth4580/Qwen3.8-27B-NVFP4-FULL is a "veloGB10" engine model ("equivalent to `--quantize all`"), no card, speed claims retracted by its author; bernhardbrieger, RedHatAI, mradermacher: nothing | | | | [21] |
 
 Engine forms on the same footing: `q3` 11.72 GiB = 3.74 bpw, `q3-compressed` 10.16 GiB = 3.24, `nvfp4` 14.52 GiB
-= 4.64 (base, ISTA matrix); `nvfp4-compressed` 13.77 GiB = 4.40 (Swift 1.5, UkisAI matrix). The engine files carry a
-0.25 to 0.35 GiB vocabulary-trimmed draft head no GGUF has (without it `q3` is 3.66 and `nvfp4` 4.52 bpw); engine
-files and GGUFs with embedded MTP both carry the 0.42 B MTP block.
+= 4.64 (base, ISTA matrix); `nvfp4-compressed` 13.77 GiB = 4.40 (Swift 1.5, UkisAI matrix). Engine files carry a 0.25
+to 0.35 GiB vocabulary-trimmed draft head no GGUF has (without it `q3` is 3.66 and `nvfp4` 4.52 bpw).
 
 ### 2.2 What the best recipes do
 
 **llama.cpp mixes** (`src/llama-quant.cpp`): `output.weight` is Q6_K for every k-quant and IQ3_S/IQ4_XS mix, Q5_K
 for IQ2 and IQ3_XXS; `attn_v` is Q4_K or Q5_K for IQ3_S, IQ3_M, IQ4_XS and Q3_K_M when GQA is at least 4 (Qwen3.8:
 6); `ffn_down` gets more bits in the first and last eighth of the layers and every third layer between; norms and
-`ssm_conv1d` are never quantized; MTP tensors follow the trunk's rules, the one special case being GLM5-Next's
-`nextn.eh_proj` floor at Q8_0 [34]. The engine's `q3` puts the LM head, token embedding, `attention/output` and
-`gdn/output` at 3.25 bpw.
+`ssm_conv1d` are never quantized; MTP tensors follow the trunk's rules [34]. The engine's `q3` puts the LM head, token
+embedding, `attention/output` and `gdn/output` at 3.25 bpw.
 
 **unsloth Dynamic 2.0/3.0**: layer-selective widths, chat and tool-call calibration, KLD plus a "Divergence-300"
 metric (300 held-out prompts, 32 greedy tokens against BF16) [22][3]. For the Qwen3.5 hybrids unsloth retired MXFP4,
