@@ -221,8 +221,8 @@ a tensor-core row never depends on the other rows of the tile, which is what mak
 - P2E2 cannot store code -4, so `q3-compressed` is stuck at RTN quality (+0.275 against +0.170 NLL); `docs/P2E2_FULL_RANGE.md`
   lists what a full-range layout needs. The fallback named there: calibrated Q3 restricted to -3..3 for both artifacts.
 - "Code-bit reduction below 4 bits per value is the only route to large further savings" for NVFP4.
-- Q3 scale plane (about 0.25 GiB) compresses 43% but needs a second table per tensor in every kernel; Q4/Q5 escape codes about
-  0.1 GiB each.
+- Q3 scale plane (about 0.65 GiB: 0.25 bpw of the 3.25) compresses about 43%, a saving of 0.25 to 0.28 GiB, but needs a second
+  table per tensor in every kernel; Q4/Q5 escape codes about 0.1 GiB each.
 - 4-row verification GEMVs run at about 600 GB/s, two thirds of peak.
 - 0.51 GiB of fixed per-sequence workspaces (about 28K tokens of KV).
 - 2:4 sparsity with FP4 would reach about 3 to 3.5 bpw with hardware MMAs at 1621 TFLOPS, but pruning a dense 27B model to 2:4

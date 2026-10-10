@@ -66,21 +66,20 @@ transforms for the K and V caches; learned layer by layer in hours with learnabl
 the residual, FlatQuant has online work before every linear; its kernel is a fused Kronecker matmul plus quantization. Any
 factorization works, so odd widths such as 17408 are no obstacle.
 
-**DuQuant, OSTQuant.** DuQuant builds block-diagonal rotations (block 128) greedily around the measured activation outliers,
-permutes channels in a zigzag so blocks have balanced outliers, and smooths; it identifies "massive outliers" at down_proj. DuQuant++
-(2026) redoes this with block 32 aligned to the MXFP4 group and optional GPTQ. OSTQuant learns one global orthogonal R_res plus
-scaling pairs S_attn, S_ffn in four equivalence pairs with a KL-top loss; everything fuses into weights at runtime.
+**DuQuant, OSTQuant.** DuQuant builds block-diagonal rotations (block 128) greedily around measured activation outliers, zigzag-permutes
+channels so blocks have balanced outliers, and smooths; it identifies "massive outliers" at down_proj. DuQuant++ (2026) uses block
+32, aligned to the MXFP4 group, with optional GPTQ. OSTQuant learns one global orthogonal R_res plus scaling pairs S_attn, S_ffn in
+four equivalence pairs with a KL-top loss; everything fuses into weights.
 
 **FP4 recipes with Hadamards.** NVIDIA's NVFP4 pretraining recipe uses 16×16 random Hadamards only on the weight-gradient GEMM
-operands; TransformerEngine's `NVFP4BlockScaling` recipe states RHT "is currently only applied to column-wise usage so that it can
-be used for wgrad GEMM", with forward weights on 2D 16×16 scales and no rotation of forward activations. Quartet (FP4 training)
-and Quartet II (NVFP4: MS-EDEN unbiased rounding, "four-over-six" scale selection in the forward pass, randomized block rotations in
-the backward pass) ship QuTLASS kernels that fuse transform, quantization and scale computation with rotation sizes 16/32/64/128
-loaded at runtime. MR-GPTQ ("Bridging the Gap", ICLR 2026) quantizes weights for MXFP4/NVFP4 with block-wise Hadamards whose block
-equals the microscaling group (FP-Quant: `hadamard_group_size` in {16, 32, 64, 128} for NVFP4, default 128; identity, Hadamard,
-DCT, DST, fast-food and GSR transforms), MSE grids and static activation reordering; its stated finding is that rotations help
-MXFP4 but can hurt NVFP4 under round-to-nearest. ModelOpt exposes `RotateConfig` (block-granular RHT) and an NVFP4 KV recipe that
-rotates K and Q but not V. SageAttention3 quantizes attention operands to FP4 with 1×16 groups and a two-level scaling of P.
+operands; TransformerEngine's `NVFP4BlockScaling` states RHT "is currently only applied to column-wise usage so that it can be used
+for wgrad GEMM"; forward activations are not rotated. Quartet and Quartet II (NVFP4: MS-EDEN unbiased rounding, "four-over-six"
+forward scaling, randomized block rotations in the backward pass) ship QuTLASS kernels that fuse transform, quantization and scale
+computation with rotation sizes 16/32/64/128. MR-GPTQ (ICLR 2026) quantizes weights for MXFP4/NVFP4 with block-wise Hadamards whose
+block equals the microscaling group (FP-Quant: `hadamard_group_size` in {16, 32, 64, 128} for NVFP4, default 128), MSE grids and
+static activation reordering; its stated finding is that rotations help MXFP4 but can hurt NVFP4 under round-to-nearest. ModelOpt
+exposes block-granular RHT (`RotateConfig`) and an NVFP4 KV recipe that rotates K and Q but not V. SageAttention3 quantizes
+attention operands to FP4 with 1×16 groups and a two-level scaling of P.
 
 ### 2.2 Architecture mapping for Qwen3.8-27B
 
@@ -173,15 +172,10 @@ AWQ and OmniQuant, which use calibration instead. No rotation-only W3A16 table e
 Hadamard plus non-uniform codebooks (QuIP#, HIGGS, QTIP; see the codebook chapter). Group-wise scales already capture most of the
 per-channel gap, which is the setting Euhedral is in.
 
-**Table 3.4: W4A4KV4 (SpinQuant README; OSTQuant README 4-4-4), PPL / zero-shot average.**
+With the KV cache also at 4 bits (W4A4KV4, SpinQuant README), SpinQuant reaches 5.9 / 7.3 / 3.8 PPL on Llama-2 7B, Llama-3 8B
+and Llama-2 70B against QuaRot's 6.4 / 8.0 / 3.9; OSTQuant reports 5.91 and 7.29 on the first two.
 
-| Method | Llama-2 7B | Llama-2 13B | Llama-2 70B | Llama-3 8B | Llama-3 70B |
-|---|---|---|---|---|---|
-| QuaRot | 6.4 / 62.5 | 5.4 / 66.2 | 3.9 / 70.3 | 8.0 / 63.3 | 20.2 / 65.1 |
-| SpinQuant | 5.9 / 64.0 | 5.3 / 66.9 | 3.8 / 71.2 | 7.3 / 65.2 | 5.5 / 69.3 |
-| OSTQuant | 5.91 / 63.18 | 5.25 / 65.41 | | 7.29 / 65.37 | |
-
-**Table 3.5: Qwen3-8B weight-only, group 128 (Qwen3-Quantization README, Table 4 of the 2026 journal version).**
+**Table 3.4: Qwen3-8B weight-only, group 128 (Qwen3-Quantization README, Table 4 of the 2026 journal version).**
 
 | Method | Bits | WikiText-2 PPL | MMLU 5-shot |
 |---|---|---|---|
@@ -194,7 +188,7 @@ per-channel gap, which is the setting Euhedral is in.
 For scale: Euhedral's calibrated Q3 on the 27B model is +0.170 nats, perplexity ×1.19; Qwen3-8B at W3 g128 with AWQ is ×2.8
 (smaller model, different method), and at W4 g128 GPTQ is +0.025 nats, close to the nvfp4 artifact's +0.029 at 4.5 bpw.
 
-**Table 3.6: FP4 activations and Hadamards in training and attention (abstract-level claims).**
+**Table 3.5: FP4 activations and Hadamards in training and attention (abstract-level claims).**
 
 | Source | Claim |
 |---|---|
@@ -352,11 +346,8 @@ rotated tensors against searched Q3/Q4/NVFP4 (the codebook chapter decides E4M3-
   rotated artifact.
 - Folding R1 into `in_proj_a` and `in_proj_b` (BF16, FP32 control path) changes alpha and beta slightly; the GDN state is FP32 and
   unquantized, so no further interaction is expected.
-- 2026 follow-ups seen only as titles and abstracts: "Block Rotation is All You Need for MXFP4 Quantization" (2511.04214),
-  "Outlier Smoothing with Closed-Form Rotations for W4A4" (2511.22316), LATMiX (2602.17681), "Transforms for LLM Quantization: The
-  Great Inversion and Format Co-Design" (2608.25188), TetraJet-v2 (2510.27527), UE5M3 block scaling (2609.02846), ReSpinQuant
-  (2604.11080), TwinQuant (2606.01556), MosaicQuant (2606.15652). Their tables were not read; none is known to change the conclusions
-  above, but the format co-design paper's title suggests it bears on the grid question of 4.1.
+- 2025-2026 follow-ups seen only as titles and abstracts (reference 19) were not read; none is known to change the conclusions above,
+  but "Transforms for LLM Quantization: The Great Inversion and Format Co-Design" (2608.25188) bears on the grid question of 4.1.
 - Open: does the Swift-1.5 fine-tune change the outlier structure relative to the base model (its imatrix differs)? E1 can be run on
   both checkpoints at nvfp4-compressed cost.
 
