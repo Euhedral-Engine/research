@@ -1,7 +1,7 @@
 # Baseline: what the four forms are today, and what any new technique must satisfy
 
 This is the reference every other document in this folder measures against. Everything here is taken from the
-Euhedral repository at branch `perf/mtp-gated-depth` (commit 8e73f0a, 2026-10-10): `README.md`, `tools/README.md`,
+Euhedral repository at branch `perf/mtp-gated-depth` (commit 269a890, PR 119, 2026-10-10): `README.md`, `tools/README.md`,
 `docs/QUALITY.md`, `docs/COMPACT_Q3_REFERENCE.md`, `docs/COMPRESSED_Q3.md`, `docs/P2E2_FULL_RANGE.md`, `docs/NVFP4_NATIVE.md`,
 `docs/NVFP4_COMPRESSED.md`, `docs/NVFP4_RESIDENCY.md`, `docs/PREFILL_MX.md`, `docs/ATTENTION_DECODE.md`, `docs/MTP_CONTRACT.md`,
 `docs/MTP_VERIFIER.md`, `docs/nvidia/tensor-cores.md` and the converter in `tools/euhedral_artifacts/`.
@@ -11,10 +11,11 @@ Euhedral repository at branch `perf/mtp-gated-depth` (commit 8e73f0a, 2026-10-10
 **Qwen3.8-27B** (Alibaba, released 2026-08-14, Apache-2.0; `config.json` architecture `Qwen3_5ForConditionalGeneration`). The
 checkpoint actually served is **`ukisai/Swift-1.5-Qwen3.8-27B`**, a reasoning-efficiency fine-tune by UkisAI (reported: about 58%
 fewer thinking tokens than the base at similar or slightly higher scores). It has the same architecture and tensor inventory, so it
-goes through the same converter. Two notes for quantization: (a) the importance matrix the calibrated artifacts use was generated from the Swift 1.5
-checkpoint itself (the repository docs and PR 119 attribute the file to ISTA-DASLab's base-model release; the maintainer
-confirmed on 2026-10-10 that it was generated from Swift, so that attribution is stale); (b) whether Swift 1.5 re-trained or
-merely copied the MTP layer is not documented in the repo.
+goes through the same converter. Two notes for quantization: (a) two source checkpoints are in use (PR 119 at commit 269a890): the `q3` and `nvfp4`
+artifacts are converted from the base Qwen3.8-27B with ISTA-DASLab's importance matrix, while `nvfp4-compressed` (the artifact
+deployed by default) is converted from Swift-1.5 with UkisAI's own published importance matrix `imatrix-swift15-v1mix.gguf`;
+each is measured against the BF16 of the checkpoint it came from; (b) whether Swift 1.5 re-trained or merely copied the MTP
+layer is not documented in the repo.
 
 The converter keeps the text tower and the MTP draft layer (785 objects) and drops the vision tower.
 
@@ -62,18 +63,20 @@ An artifact is one `.edrl` file (EDRL container version 2: each tensor descripto
 The engine reads the format and layout of every tensor and chooses kernels, speculative depth and residency itself; there are no
 user options for precision or kernels.
 
-| Artifact | Weights | Layout | File | bpw of the main tensors | Mean NLL | NLL vs BF16 (s.e.) | KL(BF16 ‖ artifact) | Top-1 agreement | Decode tok/s 4K / 32K / 64K / 128K |
-|---|---|---|---|---|---|---|---|---|---|
-| BF16 reference (llama.cpp, CPU) | | | 54.7 GB | 16 | 2.128 | | | | |
-| `q3` | Q3G64_F16S (+Q4/Q5 inputs), calibrated | `row-split-k128-v1` | 11.72 GiB | 3.25 | 2.298 | +0.170 (0.021) | 0.293 | 76.2% | 109 / 105 / 93 / 67 |
-| `q3-compressed` | the same Q3 tensors, **round-to-nearest**, transcoded losslessly | `row-split-p2e2-v1` | 10.16 GiB | about 2.65 (Q3 planes at 81.5%) | 2.403 | +0.275 (0.025) | 0.400 | 70.5% | 95 / 92 / 82 / 64 |
-| `nvfp4` | NVFP4 (E2M1 codes, E4M3 scale per 16, FP32 per tensor), calibrated | `row-split-k128-v1` | 14.52 GiB | 4.5 | 2.156 | +0.029 (0.008) | 0.147 | 88.2% | 116 / 101 / 72 / 30 |
-| `nvfp4-compressed` | NVFP4-SD4 (scales from a 16-entry E4M3 table per tensor), calibrated | `row-split-k128-sd4-v1` | 13.77 GiB | 4.25 | 2.162 | +0.034 (0.009) | 0.145 | 89.7% | 146 / 102 / 88 / 52 |
+| Artifact | Source checkpoint and importance matrix | Weights | Layout | File | bpw of the main tensors | Mean NLL | NLL vs its BF16 (s.e.) | KL(BF16 ‖ artifact) | Top-1 agreement | Decode tok/s 4K / 32K / 64K / 128K |
+|---|---|---|---|---|---|---|---|---|---|---|
+| BF16 reference (llama.cpp, CPU) | base Qwen3.8-27B: perplexity 8.39, NLL 2.128; Swift-1.5: perplexity 8.51, NLL 2.142 | | | 54.7 GB | 16 | | | | | |
+| `q3` | base; ISTA-DASLab `imatrix-qwen3.8-27b.gguf` | Q3G64_F16S (+Q4/Q5 inputs), calibrated | `row-split-k128-v1` | 11.72 GiB | 3.25 | 2.298 | +0.170 (0.021) | 0.293 | 76.2% | 109 / 105 / 93 / 67 |
+| `q3-compressed` | base; none (round-to-nearest) | the same Q3 tensors, **round-to-nearest**, transcoded losslessly | `row-split-p2e2-v1` | 10.16 GiB | about 2.65 (Q3 planes at 81.5%) | 2.403 | +0.275 (0.025) | 0.400 | 70.5% | 95 / 92 / 82 / 64 |
+| `nvfp4` | base; ISTA-DASLab `imatrix-qwen3.8-27b.gguf` | NVFP4 (E2M1 codes, E4M3 scale per 16, FP32 per tensor), calibrated | `row-split-k128-v1` | 14.52 GiB | 4.5 | 2.156 | +0.029 (0.008) | 0.147 | 88.2% | 116 / 101 / 72 / 30 |
+| `nvfp4-compressed` | **Swift-1.5**; UkisAI `imatrix-swift15-v1mix.gguf` | NVFP4-SD4 (scales from a 16-entry E4M3 table per tensor), calibrated | `row-split-k128-sd4-v1` | 13.77 GiB | 4.25 | 2.170 | +0.028 (0.009) | 0.155 | 89.4% | 146 / 102 / 88 / 52 |
 
 Quality is measured on 1279 teacher-forced tokens after a 1281-token prefix of one fixed document (`chat-corpus-v1-document.md`),
-against BF16 run in llama.cpp on the CPU (`docs/QUALITY.md`). Standard errors are of the paired NLL difference. The relaxed-kernel
-drift floor on the same artifacts is KL 3.4e-3 to 4.7e-3 with top-1 agreement 97.3 to 97.9%: **quantization error is 30 to 85
-times the kernel noise floor.** Quantization, not kernels, is where the quality headroom is.
+against the BF16 of the checkpoint each artifact was converted from, run in llama.cpp on the CPU (`docs/QUALITY.md`). Standard
+errors are of the paired NLL difference. SD4 against plain NVFP4, both converted from the base model with the same matrix: NLL
++0.005 (0.009), KL 0.037, top-1 agreement 89.8%. The relaxed-kernel drift floor on the same artifacts is KL 3.4e-3 to 4.7e-3 with
+top-1 agreement 97.3 to 97.9%: **quantization error is 30 to 85 times the kernel noise floor.** Quantization, not kernels, is
+where the quality headroom is.
 
 ### Formats in detail
 
@@ -93,11 +96,11 @@ loader uploads bytes as they are and never repacks. All multi-byte values little
 ## 3. How the weights are rounded today (`--imatrix`)
 
 - **Importance** = llama.cpp's imatrix: the mean square of each input column over a calibration text (`in_sum2 / counts`), i.e. a
-  diagonal proxy of the layer's input Hessian. The file in use, `imatrix-qwen3.8-27b.gguf`, was generated with
-  `llama-imatrix` from the Swift 1.5 checkpoint (maintainer's statement, 2026-10-10). The repository docs and PR 119 still
-  describe it as the public ISTA-DASLab GSQ-RCO matrix, whose own file used 1000 chunks of 4096 tokens; the calibration text
-  and token count of the Swift matrix are not recorded in the repository. Objects it does not cover (token embedding, LM head,
-  draft head, MTP layer) are searched with uniform weights.
+  diagonal proxy of the layer's input Hessian. Two matrices are in use: ISTA-DASLab's public `imatrix-qwen3.8-27b.gguf` (from the
+  Qwen3.8-27B GSQ-RCO release; 1000 chunks of 4096 tokens, base model) for the `q3` and `nvfp4` conversions of the base
+  checkpoint, and UkisAI's `imatrix-swift15-v1mix.gguf` (from `ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF`; 309 chunks of 4096
+  tokens of web, reasoning, multilingual and code text) for the `nvfp4-compressed` conversion of Swift-1.5. Objects neither matrix covers (token embedding, LM head, draft head, MTP
+  layer) are searched with uniform weights.
 - **Q3/Q4/Q5 (`grouped.py:search_group_codes_torch`)**: per group of 64, candidates are the RTN scale `amax/qmax`, and for each end
   `e` in {qmax, -qmin} and each of 19 steps `s` in -0.9..+0.9: scale = `amax/(e+s)`, round, then refit the scale by weighted least
   squares over the codes it produced, round the scale to binary16, requantize. The group keeps the candidate with the least weighted
@@ -107,7 +110,8 @@ loader uploads bytes as they are and never repacks. All multi-byte values little
   chosen scale. Going below the RTN scale clips the block's largest values.
 - **SD4**: a per-tensor table of 16 E4M3 codes chosen by dynamic programming over the per-block cost of every candidate scale (blocks
   grouped by their RTN code); each block then takes its least-error table entry; with `--imatrix` a block may take an entry up to 6
-  codes below its RTN scale. Measured against plain NVFP4: NLL +0.001 (within noise), KL 0.058 between the two.
+  codes below its RTN scale. Measured against plain NVFP4: NLL +0.001 (within noise), KL 0.058 for the round-to-nearest pair; +0.005 (0.009), KL 0.037
+  for the calibrated pair, both from the base checkpoint.
 - **Drafting stack**: MTP layer is plain NVFP4 in every artifact (Q3 drafts accepted fewer tokens per verification); draft head follows
   the artifact's quantization.
 - **No fine-tuning, no rotations, no GPTQ-style error feedback, no activation-aware channel scaling, no mixed per-layer bit
