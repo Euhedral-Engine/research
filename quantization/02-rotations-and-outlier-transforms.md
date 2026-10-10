@@ -117,14 +117,14 @@ one more online transform per GDN layer (48 of 64 layers).
 ### 2.3 Online transform cost (estimates)
 
 Per token at decode: 64 T_d (17408 wide), 16 T_o and 48 T_g (6144 wide), plus 2 H_5120 per draft row. Arithmetic with
-block-diagonal power-of-two Hadamards: 64·17408·10 + 64·6144·8 to 9 adds ≈ 14 to 15 Mflop per token, negligible. Launch latency
-dominates if the transforms are separate kernels: 128 kernels at 2 to 3 us inside a CUDA graph ≈ 0.25 to 0.4 ms, 1.5 to 2.5% of
-a 16.0 ms token. Fused into the kernels that already hold the row (SwiGLU epilogue holding a 17408 row in shared memory, the
-per-(row, head) gated-norm CTA for H128, the per-head merge warp for H256), the cost is the arithmetic only. The engine's own data
-point: the per-split query H256 in attention decode costs 2.5% at 16K and 0.7% at 64K (`ATTENTION_DECODE.md`), an upper bound for
-a transform that runs once per row. Prefill: one extra read-write pass of the activation per transformed linear, about 1 to 2% of
-the chunk's GEMM time (estimate). FlatQuant's measurement of unfused online transforms: Llama-2-7B decode at batch 1 on an RTX 3090
-runs at 0.70× (QuaRot) and 0.71× (FlatQuant) of FP16 against 0.81× for plain Int4, so about 13% of a step in that implementation.
+block-diagonal power-of-two Hadamards: about 14 to 15 Mflop per token, negligible. Launch latency dominates if the transforms are
+separate kernels: 128 kernels at 2 to 3 us inside a CUDA graph ≈ 0.25 to 0.4 ms, 1.5 to 2.5% of a 16.0 ms token. Fused into the
+kernels that already hold the row (a SwiGLU epilogue with the 17408 row in shared memory, the per-(row, head) gated-norm CTA for
+H128, the per-head merge warp for H256), the cost is the arithmetic only. The engine's own data point: the per-split query H256 in
+attention decode costs 2.5% at 16K and 0.7% at 64K (`ATTENTION_DECODE.md`), an upper bound for a transform run once per row.
+Prefill: one extra read-write pass per transformed linear, about 1 to 2% of the chunk's GEMM time (estimate). FlatQuant's unfused
+measurement: Llama-2-7B decode at batch 1 on an RTX 3090 runs at 0.70× (QuaRot) and 0.71× (FlatQuant) of FP16 against 0.81× for
+plain Int4, about 13% of a step in that implementation.
 
 ## 3. Published results
 

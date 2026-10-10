@@ -9,13 +9,14 @@ Euhedral repository at branch `perf/mtp-gated-depth` (commit 269a890, PR 119, 20
 ## 1. The model
 
 **Qwen3.8-27B** (Alibaba, released 2026-08-14, Apache-2.0; `config.json` architecture `Qwen3_5ForConditionalGeneration`). The
-checkpoint actually served is **`ukisai/Swift-1.5-Qwen3.8-27B`**, a reasoning-efficiency fine-tune by UkisAI (reported: about 58%
-fewer thinking tokens than the base at similar or slightly higher scores). It has the same architecture and tensor inventory, so it
+checkpoint actually served is **`ukisai/Swift-1.5-Qwen3.8-27B`**, a reasoning-efficiency fine-tune by UkisAI (reported by UkisAI: a 58.5%
+median reduction in thinking tokens on GPQA-Diamond, 41.9% mean, with mixed per-benchmark scores against the base; chapter 09). It has the same architecture and tensor inventory, so it
 goes through the same converter. Two notes for quantization: (a) two source checkpoints are in use (PR 119 at commit 269a890): the `q3` and `nvfp4`
 artifacts are converted from the base Qwen3.8-27B with ISTA-DASLab's importance matrix, while `nvfp4-compressed` (the artifact
 deployed by default) is converted from Swift-1.5 with UkisAI's own published importance matrix `imatrix-swift15-v1mix.gguf`;
-each is measured against the BF16 of the checkpoint it came from; (b) whether Swift 1.5 re-trained or merely copied the MTP
-layer is not documented in the repo.
+each is measured against the BF16 of the checkpoint it came from; (b) Swift 1.5 ships the base model's MTP head unchanged, according to UkisAI's model card as
+relayed by search summaries and third-party GGUF cards (huggingface.co is unreachable from this environment; chapters 08 and 09),
+so the drafter was never tuned to the fine-tune, let alone to a quantized target.
 
 The converter keeps the text tower and the MTP draft layer (785 objects) and drops the vision tower.
 
@@ -221,7 +222,7 @@ a tensor-core row never depends on the other rows of the tile, which is what mak
 - P2E2 cannot store code -4, so `q3-compressed` is stuck at RTN quality (+0.275 against +0.170 NLL); `docs/P2E2_FULL_RANGE.md`
   lists what a full-range layout needs. The fallback named there: calibrated Q3 restricted to -3..3 for both artifacts.
 - "Code-bit reduction below 4 bits per value is the only route to large further savings" for NVFP4.
-- Q3 scale plane (about 0.65 GiB: 0.25 bpw of the 3.25) compresses about 43%, a saving of 0.25 to 0.28 GiB, but needs a second
+- Q3 scale plane (about 0.65 GiB: 0.25 bpw of the 3.25, of which 0.59 GiB is streamed per token) compresses about 43%, a saving of 0.25 to 0.28 GiB, but needs a second
   table per tensor in every kernel; Q4/Q5 escape codes about 0.1 GiB each.
 - 4-row verification GEMVs run at about 600 GB/s, two thirds of peak.
 - 0.51 GiB of fixed per-sequence workspaces (about 28K tokens of KV).
