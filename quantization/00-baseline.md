@@ -78,11 +78,16 @@ errors are of the paired NLL difference. SD4 against plain NVFP4, both converted
 top-1 agreement 97.3 to 97.9%: **quantization error is 30 to 85 times the kernel noise floor.** Quantization, not kernels, is
 where the quality headroom is.
 
+These are end-to-end numbers: every artifact also runs its KV cache in NVFP4 and its production kernels relaxed, so the weight
+rounding's own share of the error is not isolated anywhere in the repository. Published weight-only W4 g128 results on the base
+model report KL to BF16 of about 0.03 on other text (chapter 01), against 0.147 here, so a fake-quant run of the weights alone
+(chapter 01, experiment 1) and a swap of the KV code tables (chapter 06, experiment 1) are needed before attributing the gap.
+
 ### Formats in detail
 
 | Format | Codes | Group | Scale | bpw | Where used |
 |---|---|---|---|---|---|
-| Q3G64_F16S | signed 3-bit, -4..3 (RTN never produces -4; calibrated search does) | 64 along K | binary16 per group | 3.25 | MLP, attention/GDN output, embedding, LM head, draft head (q3 artifacts) |
+| Q3G64_F16S | signed 3-bit, -4..3 (RTN never produces -4; the calibrated search does, but only in groups whose largest magnitude is negative, because the converter keeps every scale positive) | 64 along K | binary16 per group | 3.25 | MLP, attention/GDN output, embedding, LM head, draft head (q3 artifacts) |
 | Q4G64_F16S | -8..7 | 64 | binary16 | 4.25 | `attention/query_key`, `gdn/query_key` |
 | Q5G64_F16S | -16..15 (low nibble plane + fifth-bit plane) | 64 | binary16 | 5.25 | `attention/gate_value`, `gdn/value_z` |
 | NVFP4 | E2M1 (0, 0.5, 1, 1.5, 2, 3, 4, 6, sign) | 16 along K | E4M3 (7 bits used, 0..448) per block, FP32 per tensor = amax / (6 x 448) | 4.5 | nvfp4 artifacts, MTP layer in all artifacts |
