@@ -72,6 +72,9 @@ user options for precision or kernels.
 | `nvfp4` | base; ISTA-DASLab `imatrix-qwen3.8-27b.gguf` | NVFP4 (E2M1 codes, E4M3 scale per 16, FP32 per tensor), calibrated | `row-split-k128-v1` | 14.52 GiB | 4.5 | 2.156 | +0.029 (0.008) | 0.147 | 88.2% | 116 / 101 / 72 / 30 |
 | `nvfp4-compressed` | **Swift-1.5**; UkisAI `imatrix-swift15-v1mix.gguf` | NVFP4-SD4 (scales from a 16-entry E4M3 table per tensor), calibrated | `row-split-k128-sd4-v1` | 13.77 GiB | 4.25 | 2.170 | +0.028 (0.009) | 0.155 | 89.4% | 146 / 102 / 88 / 52 |
 
+Whole-file bits per weight over the 26.9 B text parameters, which GGUF comparisons use (the files also carry the 0.67 B draft head
+and the 0.42 B MTP block): `q3` 3.74, `q3-compressed` 3.24, `nvfp4` 4.64, `nvfp4-compressed` 4.40.
+
 Quality is measured on 1279 teacher-forced tokens after a 1281-token prefix of one fixed document (`chat-corpus-v1-document.md`),
 against the BF16 of the checkpoint each artifact was converted from, run in llama.cpp on the CPU (`docs/QUALITY.md`). Standard
 errors are of the paired NLL difference. SD4 against plain NVFP4, both converted from the base model with the same matrix: NLL
@@ -82,7 +85,8 @@ where the quality headroom is.
 These are end-to-end numbers: every artifact also runs its KV cache in NVFP4 and its production kernels relaxed, so the weight
 rounding's own share of the error is not isolated anywhere in the repository. Published weight-only W4 g128 results on the base
 model report KL to BF16 of about 0.03 on other text (chapter 01), against 0.147 here, so a fake-quant run of the weights alone
-(chapter 01, experiment 1) and a swap of the KV code tables (chapter 06, experiment 1) are needed before attributing the gap.
+(chapter 01, experiment 1) and a swap of the KV code tables (chapter 06, experiment 1) are needed before attributing the gap;
+a community llama.cpp measurement of an NVFP4 KV cache on this model puts the cache's share at about 0.015 KLD (chapter 09).
 KL is also text-specific: on a same-harness WikiText table of Qwen3.8-27B quantizations (chapter 03), community NVFP4
 checkpoints score 0.037 to 0.065 and EXL3 at 2.5 / 3.0 / 3.5 / 4.0 bpw scores 0.075 / 0.045 / 0.023 / 0.016, so any
 cross-source comparison with the repository's 0.147 needs a same-harness run.

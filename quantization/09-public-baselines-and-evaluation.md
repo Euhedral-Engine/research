@@ -55,7 +55,7 @@ within a source. Hugging Face rows are via summary.
 | ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF (Swift 1.5, deployed) | GSQ-RCO GGUF with UkisAI's `imatrix-swift15-v1mix.gguf` | not retrieved | 309 x 4096 tokens, about 1.27 M tokens of web, reasoning, multilingual and code text | not retrieved (seen in one search result; search budget ran out before its card could be queried); whether GSQ was rerun on Swift or ISTA's allocation reused is unknown | [46][74] |
 | RentedNoodle IQ3_XXS + Q6_K MTP head (uncensored base) | ISTA's published RCO allocation, custom imatrix | 9.75 GiB = 3.11 | "OrcaRouter-native" imatrix | WikiText-2 PPL 6.1745 +- 0.149 (40 x 512; no same-harness BF16); needle 6/6 on a 15K-word haystack; MTP n-max 2 acceptance 0.67 at 32K, 0.70 to 0.77 at 65K; RTX 5070 Ti 16 GB | [11] repo |
 | cdiamond iMatrix-NVFP4-MTP GGUF (base) | NVFP4 bulk, sensitive tensors Q5_K/Q6_K, MTP embedded | 17.1 GB = 5.09 | imatrix | short WikiText-2 control: 6.1197 vs Q4_1 6.1127 (gap below the check's error) vs stock NVFP4 6.4949 | [12] |
-| NVFP4 checkpoints (base): nvidia; unsloth; Inferact; RadixArk; huginnfork NVFP4A16; TelperionAI NVFP4-AWQ-GPTQ | nvidia: NVFP4 on MLP and lm_head, FP8 attention; huginnfork: MLPs only, attention and vision BF16; TelperionAI: AWQ scaling + GPTQ | nvidia about 24.6 GiB in vLLM; RadixArk about 22 GiB | | unsloth "92 to 97% top-1", vLLM MTP acceptance 0.788; Inferact 0.897; huginnfork "+3% PPL" | [13]-[18] |
+| NVFP4 checkpoints (base): nvidia; unsloth; Inferact; RadixArk; huginnfork NVFP4A16; TelperionAI NVFP4-AWQ-GPTQ | nvidia: NVFP4 on MLP and lm_head, FP8 attention; huginnfork: MLPs only, attention and vision BF16; TelperionAI: AWQ scaling + GPTQ | nvidia about 24.6 GiB in vLLM; RadixArk about 22 GiB | | unsloth "92 to 97% top-1", vLLM MTP acceptance 0.788; Inferact 0.897; huginnfork "+3% PPL" | [13][14][15][16][17][18] |
 | Qwen official; MLX | FP8 (block 128) is the only official quant (no GGUF, AWQ, GPTQ or MLX at launch); MLX 4-bit from mlx-community (also an MTP-4bit), lmstudio-community, PocketAiHub 4/6/8-bit | FP8 about 28 GB; MLX 4-bit 14.98 GiB = 4.78 | | none | [19][20] |
 | Not found | doth4580/Qwen3.8-27B-NVFP4-FULL is a "veloGB10" engine model ("equivalent to `--quantize all`"), no card, speed claims retracted by its author; bernhardbrieger, RedHatAI, mradermacher: nothing | | | | [21] |
 
@@ -77,18 +77,17 @@ advises never pushing `ssm_out` down, and keeps SSM output at Q5_K and SSM alpha
 [23][24].
 
 **ISTA GSQ-RCO.** GSQ (Gumbel-Softmax Quantization, arXiv:2604.18556; Dadgarnia, Tabesh, Nikdan, Helcig, Kurtic,
-Kleinegger, Alistarh) is post-training scalar quantization on a symmetric group-wise integer grid that GGUF k-quants
-can run: GPTQ initialization per layer, then a learnable logit vector per weight over the grid, sampled with
-Gumbel-Softmax at an annealed temperature and trained for 10 epochs per layer against the layer's reconstruction
-error, then hard-rounded; group size 128; Qwen3.5 configs calibrate on 4096 OpenThoughts samples of up to 4096
-tokens. Reported: 2.13 bpw Llama-3.1-70B zero-shot 75.57 vs 78.99 FP16 and 76.3 to 77.3 for vector quantizers;
-unsloth Qwen3-8B Q2_K refined in-format from 50.03 to 56.28 [25][26]. RCO (Riemannian Constrained Optimization,
-arXiv:2605.00649; Helcig, Alistarh) picks one of K options per tensor under an exact total-bit budget by treating the
-budget as a smooth manifold in softmax-logit space (projected Adam steps, retraction along the cost vector, Gumbel-STE
-with an exact knapsack solver); claimed parity with EvoPress at 3 to 16x less wall-clock [27][28]. The GGUF release
-is GSQ-refined weights with an RCO-chosen GGUF type per tensor; RentedNoodle reuses ISTA's allocation file [11].
-ISTA reports benchmarks, not KLD; the one independent test (60 questions; 58/60 for IQ2_S MTP) notes the
-"task-lossless" label is the card's [29].
+Kleinegger, Alistarh) is GGUF-compatible post-training scalar quantization on a symmetric group-wise integer grid:
+GPTQ initialization per layer, then a learnable logit vector per weight over the grid, sampled with Gumbel-Softmax at
+an annealed temperature and trained 10 epochs per layer against the layer's reconstruction error, then hard-rounded;
+group size 128; Qwen3.5 configs calibrate on 4096 OpenThoughts samples of up to 4096 tokens. Reported: 2.13 bpw
+Llama-3.1-70B zero-shot 75.57 vs 78.99 FP16 and 76.3 to 77.3 for vector quantizers; unsloth Qwen3-8B Q2_K refined
+in-format from 50.03 to 56.28 [25][26]. RCO (Riemannian Constrained Optimization, arXiv:2605.00649; Helcig, Alistarh)
+picks one of K options per tensor under an exact total-bit budget by treating the budget as a smooth manifold in
+softmax-logit space (projected Adam steps, retraction along the cost vector, Gumbel-STE with an exact knapsack
+solver); claimed parity with EvoPress at 3 to 16x less wall-clock [27][28]. The GGUF release is GSQ-refined weights
+with an RCO-chosen GGUF type per tensor; RentedNoodle reuses ISTA's allocation file [11]. ISTA reports benchmarks, not
+KLD; the one independent test (60 questions) notes the "task-lossless" label is the card's [29].
 
 **cdiamond's hybrid** keeps sensitive tensors at Q5_K/Q6_K inside an NVFP4 file and matches Q4_1 where a stock
 all-NVFP4 build was 6% worse in PPL [12]. With huginnfork (MLP-only NVFP4) and NVIDIA (FP8 attention), every public
@@ -98,7 +97,9 @@ NVFP4 release of this model keeps something above 4 bits.
 
 - `linear_attn.out_proj` (`ssm_out`, the engine's `gdn/output`, Q3 today) is the most KLD-sensitive tensor in a
   per-tensor sweep on Qwen3.5-9B; `in_proj_z` tolerates MXFP4 badly; FFN gate/up tolerate about 3 bits [24].
-  Low-bit SSM tensors produce "endless reasoning traces" unless kept at Q5 to Q8 [23].
+  Low-bit SSM tensors produce "endless reasoning traces" unless kept at Q5 to Q8 [23]. A forward-only, KL-guided
+  per-layer sensitivity method for hybrid SSM-Transformer models (arXiv:2604.13440) reports 5.9 to 7.2x size
+  reductions with minimal perplexity loss when the sensitive layers are kept at higher precision [73].
 - The GDN path is fragile at depth in llama.cpp: instant end-of-sequence beyond about 130K on CUDA and CPU [30], a
   25x decode slowdown past about 80K [31], and a BF16 chunked GDN prefill kernel that alone produced KLD about 0.1 and
   top-1 92% on a Q8_0 model [32]. A kernel-precision regression looks like quantization loss; the drift test
@@ -108,10 +109,9 @@ NVFP4 release of this model keeps something above 4 bits.
 
 ### 2.4 MTP in llama.cpp and the drafting-stack precedent
 
-Mainline llama.cpp has MTP speculation since PR #22673 (merged 2026-05-16): `--spec-type draft-mtp`,
-`convert_hf_to_gguf.py --mtp` exports the head as a sidecar, `--no-nextn` drops it from the trunk, `llama-imatrix
---nextn` collects importance for the block; `src/models/qwen35.cpp` implements the Qwen3.5/3.8 head [33][34].
-Reported acceptance (llama.cpp and vLLM count it differently):
+Mainline llama.cpp has MTP speculation since PR #22673 (merged 2026-05-16): `--spec-type draft-mtp`, a `--mtp`
+sidecar export in the converter, and `llama-imatrix --nextn` for the block's importance; `src/models/qwen35.cpp`
+implements the Qwen3.5/3.8 head [33][34]. Reported acceptance (llama.cpp and vLLM count it differently):
 
 | Setup | Acceptance | Source |
 |---|---|---|
@@ -180,8 +180,7 @@ equivalent on an infinite corpus with PPL superior on a limited one [51][52]. Hi
 vocabularies but not KLD; `compare_reference.py` reads this format [53]. The opposing view ("Accuracy is Not All You
 Need", arXiv:2407.09141): accuracy and PPL average out symmetric per-token changes, KLD and top-1 flips do not
 (Spearman 0.981 between KLD and flips on MMLU) [54]; smcleod argues KLD isolates quantization damage from the model's
-own uncertainty [55]. llama.cpp's Llama-3-8B scoreboard shows why both are reported: q4_K_M raises PPL 2.8% at KLD
-0.031 and same-top-p 91.9%; q2_K raises PPL 56% at KLD 0.445 and same-top-p 71.1% [56].
+own uncertainty [55]. Both are reported here.
 
 ### 4.2 What `llama-perplexity --kl-divergence` reports
 
@@ -230,10 +229,9 @@ same-top-1 on 1279 tokens has a binomial s.e. of 0.9 to 1.2 pp. Tokens for a tar
 | 0.005 nats | about 3.3K | about 32K |
 | 0.002 nats | about 20K | about 200K |
 
-Public practice: bartowski scores 100 chunks of wiki.test.raw; the llama.cpp scoreboard the whole wikitext-2 test
-(about 300K tokens, KLD s.e. 2e-4 to 3e-3); ubergarm a 1.6 MiB transcript corpus with median and 99% KLD [60];
-discussion #65 87 chunks at 4096 context [8]. Differences of 0.01 in mean KL between two engine forms are not
-resolvable on 1279 tokens; 32K scored tokens brings the s.e. to about 0.002 to 0.005.
+Public practice: bartowski scores 100 chunks of wiki.test.raw, the llama.cpp scoreboard the whole wikitext-2 test
+(about 300K tokens, KLD s.e. 2e-4 to 3e-3), ubergarm a 1.6 MiB transcript corpus [60]. A 0.01 difference in mean KL
+between two engine forms is not resolvable on 1279 tokens; 32K scored tokens brings the s.e. to about 0.002 to 0.005.
 
 ### 4.5 Downstream deltas versus KLD
 
@@ -337,20 +335,16 @@ calibration text identity, SHA-256 and token count when the text is the engine's
 
 - Public KLD numbers are for the base model on wikitext; the engine's base forms match the checkpoint but differ in
   text and bundle the KV cache. Until the weight-only run on T2 exists, the "one bit of effective precision" gap
-  carries a plausible 2x uncertainty from text. Only `nvfp4-compressed` describes what ships; nothing yet says how
-  the Q3 route behaves on Swift 1.5.
-- Every Hugging Face card was read through search summaries; values could be transcription errors. bartowski's IQ3_S
-  and IQ4_XS rows were not visible. ISTA's "task-lossless" table is publisher data; the one independent test used 60
-  questions.
-- Swift 1.5's MTP training, vision tower, license terms and sampling guidance are undocumented in what was found;
-  read the license before redistributing artifacts.
+  carries a plausible 2x uncertainty from text, and only `nvfp4-compressed` describes what ships.
+- Every Hugging Face card was read through search summaries (possible transcription errors; bartowski's IQ3_S and
+  IQ4_XS rows were not visible); ISTA's "task-lossless" table is publisher data with one 60-question independent test.
+- Swift 1.5's MTP training, vision tower, license terms and sampling guidance are undocumented; read the license
+  before redistributing artifacts. UkisAI's GSQ-RCO GGUF of Swift 1.5 has unknown bit widths and quality here.
 - Both importance matrices are public files whose texts are known at genre level (UkisAI) or not at all (ISTA); they
   can be fixed by hash but not reproduced, and UkisAI's is a third the size of ISTA's, a confound when compared.
-  UkisAI's GSQ-RCO GGUF of Swift 1.5 has unknown bit widths and quality here; its card is the first thing to read.
 - MTP acceptance on Qwen3.8-27B is 44 to 50% at n-max 4 in llama.cpp, 67 to 77% at n-max 2, 79 to 90% in vLLM; the
   metrics differ and none is the engine's "tokens per verification". The GDN path has open llama.cpp correctness
-  issues beyond 80K to 130K tokens; validate the reference's own NLL curve against depth before trusting long-context
-  KL.
+  issues beyond 80K to 130K tokens; validate the reference's own NLL curve against depth first.
 - The search budget ran out before the UkisAI GSQ-RCO card, bartowski's full percentile table, the unsloth Dynamic 3.0
   page, the ISTA imatrix text, the Swift Open License text and Swift 1.5 sampling guidance could be queried.
 
