@@ -29,7 +29,8 @@ about 0.015, and the rest is rounding and allocation. The best public recipes ke
 projection at 5 to 8 bits, search the per-tensor allocation (ISTA's GSQ-RCO reports AIME25 and LiveCodeBench v6 equal
 to BF16 at 3.5 bpw), and use error feedback or learned assignments rather than per-group scale search. Swift 1.5 is a
 LoRA-derived reasoning-efficiency tune claiming 58.5% fewer thinking tokens and +0.35% average score under a "Swift
-Open License v1.0"; whether its MTP block was touched is undocumented; UkisAI's own GSQ-RCO GGUF of Swift 1.5, built
+Open License v1.0"; its model card is reported to say the published weights include the base model's MTP head (chapter 08), while whether
+the LoRA touched that block is not stated; UkisAI's own GSQ-RCO GGUF of Swift 1.5, built
 with the 1.27 M-token matrix the deployed form already uses, is the most comparable public quantization of the served
 checkpoint, but its bit widths and quality could not be retrieved in this session. The recommended protocol evaluates
 every form on the deployed checkpoint over four texts at 32K scored tokens, reports the full `llama-perplexity

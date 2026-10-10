@@ -253,7 +253,7 @@ FP4 activations in prefill.
   table must contain each tensor's largest scale (the SD4 lesson: a frequency table clipped outlier blocks 8x and cost 2 nats).
   P2E2 carries the same scales byte for byte, so `q3-compressed` takes the same table and index plane.
 - **D.** MSE on those tensors falls 4 to 8x. Whether NLL moves depends on their share of the `q3` penalty, which is unknown: the
-  MLP at Q3 has 10 to 20x their relative MSE on 67% of the bytes, so unless the input projections' sensitivity (input Hessian
+  MLP at Q3 has 10 to 20x their relative MSE on 60% of the bytes, so unless the input projections' sensitivity (input Hessian
   trace) is far higher, the gain is under +0.02 nats and unmeasurable on one document. In the NVFP4 forms the same tensors sit at
   4.5 bpw; FP6 there costs +1.75 bpw x 3.61 B = 0.74 GiB, too much at 64K unless only `attention/gate_value` (0.59 B, +0.12 GiB)
   proves sensitive. FP8 G64 (+1.26 GiB on `q3`) is justified only if FP6 fails the diagnostic, which the MSE table makes unlikely.

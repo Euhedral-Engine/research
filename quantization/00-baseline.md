@@ -14,9 +14,9 @@ median reduction in thinking tokens on GPQA-Diamond, 41.9% mean, with mixed per-
 goes through the same converter. Two notes for quantization: (a) two source checkpoints are in use (PR 119 at commit 269a890): the `q3` and `nvfp4`
 artifacts are converted from the base Qwen3.8-27B with ISTA-DASLab's importance matrix, while `nvfp4-compressed` (the artifact
 deployed by default) is converted from Swift-1.5 with UkisAI's own published importance matrix `imatrix-swift15-v1mix.gguf`;
-each is measured against the BF16 of the checkpoint it came from; (b) Swift 1.5 ships the base model's MTP head unchanged, according to UkisAI's model card as
-relayed by search summaries and third-party GGUF cards (huggingface.co is unreachable from this environment; chapters 08 and 09),
-so the drafter was never tuned to the fine-tune, let alone to a quantized target.
+each is measured against the BF16 of the checkpoint it came from; (b) UkisAI's model card is reported to say the published weights include the base model's MTP head,
+and third-party GGUF cards say it was not fine-tuned (search summaries; huggingface.co is unreachable from this environment;
+chapters 08 and 09), so the drafter was most likely never tuned to the fine-tune, let alone to a quantized target.
 
 The converter keeps the text tower and the MTP draft layer (785 objects) and drops the vision tower.
 
