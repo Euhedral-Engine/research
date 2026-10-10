@@ -11,8 +11,10 @@ Euhedral repository at branch `perf/mtp-gated-depth` (commit 8e73f0a, 2026-10-10
 **Qwen3.8-27B** (Alibaba, released 2026-08-14, Apache-2.0; `config.json` architecture `Qwen3_5ForConditionalGeneration`). The
 checkpoint actually served is **`ukisai/Swift-1.5-Qwen3.8-27B`**, a reasoning-efficiency fine-tune by UkisAI (reported: about 58%
 fewer thinking tokens than the base at similar or slightly higher scores). It has the same architecture and tensor inventory, so it
-goes through the same converter. Two consequences for quantization: (a) the only importance matrix in use was measured on the
-*base* model, not on Swift 1.5; (b) whether Swift 1.5 re-trained or merely copied the MTP layer is not documented in the repo.
+goes through the same converter. Two notes for quantization: (a) the importance matrix the calibrated artifacts use was generated from the Swift 1.5
+checkpoint itself (the repository docs and PR 119 attribute the file to ISTA-DASLab's base-model release; the maintainer
+confirmed on 2026-10-10 that it was generated from Swift, so that attribution is stale); (b) whether Swift 1.5 re-trained or
+merely copied the MTP layer is not documented in the repo.
 
 The converter keeps the text tower and the MTP draft layer (785 objects) and drops the vision tower.
 
@@ -91,9 +93,11 @@ loader uploads bytes as they are and never repacks. All multi-byte values little
 ## 3. How the weights are rounded today (`--imatrix`)
 
 - **Importance** = llama.cpp's imatrix: the mean square of each input column over a calibration text (`in_sum2 / counts`), i.e. a
-  diagonal proxy of the layer's input Hessian. The file in use is the public `imatrix-qwen3.8-27b.gguf` from
-  `ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF` (1000 chunks of 4096 tokens), measured on the base model. Objects it does not cover (token
-  embedding, LM head, draft head, MTP layer) are searched with uniform weights.
+  diagonal proxy of the layer's input Hessian. The file in use, `imatrix-qwen3.8-27b.gguf`, was generated with
+  `llama-imatrix` from the Swift 1.5 checkpoint (maintainer's statement, 2026-10-10). The repository docs and PR 119 still
+  describe it as the public ISTA-DASLab GSQ-RCO matrix, whose own file used 1000 chunks of 4096 tokens; the calibration text
+  and token count of the Swift matrix are not recorded in the repository. Objects it does not cover (token embedding, LM head,
+  draft head, MTP layer) are searched with uniform weights.
 - **Q3/Q4/Q5 (`grouped.py:search_group_codes_torch`)**: per group of 64, candidates are the RTN scale `amax/qmax`, and for each end
   `e` in {qmax, -qmin} and each of 19 steps `s` in -0.9..+0.9: scale = `amax/(e+s)`, round, then refit the scale by weighted least
   squares over the codes it produced, round the scale to binary16, requantize. The group keeps the candidate with the least weighted
