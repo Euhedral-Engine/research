@@ -354,11 +354,11 @@ rotated tensors against searched Q3/Q4/NVFP4 (the codebook chapter decides E4M3-
 ## 7. References
 
 1. QuaRot: Ashkboos et al., "QuaRot: Outlier-Free 4-Bit Inference in Rotated LLMs", arXiv 2404.00456 (NeurIPS 2024). Code read:
-   https://github.com/spcl/QuaRot (`fake_quant/rotation_utils.py`, `fake_quant/hadamard_utils.py`, `e2e/quantized_llama/modeling_llama.py`).
+   https://github.com/spcl/QuaRot (`fake_quant/rotation_utils.py`, `e2e/quantized_llama/modeling_llama.py`).
 2. SpinQuant: Liu et al., "SpinQuant: LLM Quantization with Learned Rotations", arXiv 2405.16406 (ICLR 2025). Code and results table:
-   https://github.com/facebookresearch/SpinQuant (`utils/fuse_norm_utils.py`, `eval_utils/rotation_utils.py`, `train_utils/apply_r3_r4.py`, `optimize_rotation.py`).
+   https://github.com/facebookresearch/SpinQuant.
 3. FlatQuant: Sun et al., "FlatQuant: Flatness Matters for LLM Quantization", arXiv 2410.09426 (ICML 2025). Code and Tables 1-7:
-   https://github.com/ruikangliu/FlatQuant (`flatquant/trans_utils.py`, `flatquant/model_tools/qwen_utils.py`, `REALQUANT.md`).
+   https://github.com/ruikangliu/FlatQuant.
 4. DuQuant: Lin et al., "DuQuant: Distributing Outliers via Dual Transformation Makes Stronger Quantized LLMs", arXiv 2406.01721
    (NeurIPS 2024 oral). https://github.com/Hsu1023/DuQuant. DuQuant++: "Fine-grained Rotation Enhances Microscaling FP4 Quantization",
    arXiv 2604.17789 (2026), https://github.com/Hsu1023/DuQuant-v2.
@@ -392,7 +392,6 @@ rotated tensors against searched Q3/Q4/NVFP4 (the codebook chapter decides E4M3-
     `modelopt_recipes/configs/ptq/units/kv_nvfp4_rotate.yaml`, `plugins/vllm_indexer.py`, `plugins/gated_delta_net`).
 19. Titles seen in search results only (not read): arXiv 2511.04214, 2511.22316, 2602.17681, 2608.25188, 2510.27527, 2609.02846,
     2604.11080, 2606.01556, 2606.15652.
-20. Euhedral sources cited: `docs/PREFILL_MX.md`, `docs/NVFP4_NATIVE.md`, `docs/ATTENTION_DECODE.md`, `docs/MTP_CONTRACT.md`,
-    `docs/MTP_VERIFIER.md`, `docs/DFLASH2.md`, `native/src/attention/nvfp4_kv.cuh`, `native/src/attention/nvfp4_attention.cuh`,
-    `native/src/attention/kv_append.cuh`, `native/src/gdn/gated_norm.cuh`, `native/src/gdn/convolution.cuh`,
-    `native/src/gdn/recurrence.cuh`, `native/src/norm/kernels.cu`, `tools/euhedral_artifacts/inventory.py`, `grouped.py`, `nvfp4.py`.
+20. Euhedral sources cited: `docs/PREFILL_MX.md`, `NVFP4_NATIVE.md`, `ATTENTION_DECODE.md`, `MTP_CONTRACT.md`, `MTP_VERIFIER.md`,
+    `DFLASH2.md`; `native/src/attention/{nvfp4_kv,nvfp4_attention,kv_append}.cuh`, `native/src/gdn/{gated_norm,convolution,recurrence}.cuh`,
+    `native/src/norm/kernels.cu`; `tools/euhedral_artifacts/{inventory,grouped,nvfp4}.py`.
