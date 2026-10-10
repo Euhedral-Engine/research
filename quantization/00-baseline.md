@@ -83,6 +83,9 @@ These are end-to-end numbers: every artifact also runs its KV cache in NVFP4 and
 rounding's own share of the error is not isolated anywhere in the repository. Published weight-only W4 g128 results on the base
 model report KL to BF16 of about 0.03 on other text (chapter 01), against 0.147 here, so a fake-quant run of the weights alone
 (chapter 01, experiment 1) and a swap of the KV code tables (chapter 06, experiment 1) are needed before attributing the gap.
+KL is also text-specific: on a same-harness WikiText table of Qwen3.8-27B quantizations (chapter 03), community NVFP4
+checkpoints score 0.037 to 0.065 and EXL3 at 2.5 / 3.0 / 3.5 / 4.0 bpw scores 0.075 / 0.045 / 0.023 / 0.016, so any
+cross-source comparison with the repository's 0.147 needs a same-harness run.
 
 ### Formats in detail
 
@@ -139,7 +142,7 @@ but `--jobs 16` already fills swap. A llama.cpp tree (commit 67a17c17c), a BF16 
 | Fixed per-sequence state and workspaces (GDN state 0.15 GiB, prefill, verify, scratch) | 0.51 GiB; the planner reserves 1280 MiB |
 | KV cache (NVFP4 pages, 16 layers) | 18 KiB per token: 0.56 GiB at 32K, 1.1 GiB at 64K, 2.25 GiB at 128K |
 | Speculative GDN checkpoint/records (ReplaySSM) | about 157 MiB |
-| MTP layer + draft head | 0.57 GiB (NVFP4), never host-backed |
+| MTP layer + draft head | 0.57 GiB in nvfp4 artifacts (NVFP4 draft head), 0.47 GiB in q3 artifacts (Q3 draft head); never host-backed |
 | `q3` payload | 11.72 GiB: runs 128K with nothing host-backed |
 | `nvfp4` payload | 14.52 GiB: host-backs 1.0 / 1.6 / 2.8 GiB at 32K / 64K / 128K |
 | `nvfp4-compressed` payload | 13.77 GiB: host-backs 0.27 / 0.84 / 1.97 GiB at 32K / 64K / 128K |
@@ -188,8 +191,11 @@ a tensor-core row never depends on the other rows of the tile, which is what mak
 2. **A prefill route at 9+ rows that does not fall back to the 102-TFLOPS BF16 path.** Today's routes need codes that expand exactly
    to E4M3 (small integers) or that *are* E2M1 x E4M3. A non-uniform codebook that is not E4M3-representable needs a two-term E4M3
    decomposition of the weights (halving the MXFP8 rate) or a BF16 fallback (4x slower).
-3. **Decode instruction budget.** The Q3 GEMV decodes about 2.85e12 codes/s from L2, only 1.4x its DRAM-fed rate: a format may spend
-   at most about 1.3x the instructions per code of Q3 before one-row decode slows, and the 4-row twins are already ALU-bound.
+3. **Decode instruction budget.** The Q3 GEMV decodes about 2.85e12 codes/s from L2, only 1.4x its DRAM-fed rate: at equal bytes a
+   format may spend at most about 1.3x the instructions per code of Q3 before one-row decode slows, and the 4-row twins are already
+   ALU-bound. A smaller artifact must also decode proportionally more codes per second to stay DRAM-bound (3.25 / 2.5 = 1.3x at
+   2.5 bpw), which leaves about 1.08x per code on the FMA path; a 2.5 bpw format therefore needs a cheaper decode than Q3's, or the
+   tensor-core path that `nvfp4::decode_rows` uses (chapter 03).
    Table lookups in shared memory are cheap; variable-length decoding that must place each value at its code position costs about
    11 instructions per pair against 7 (P2E2: -13% decode for -18.5% bytes).
 4. **Determinism.** Every kernel is deterministic and replayed from captured CUDA graphs; benchmarks compare output hashes.
