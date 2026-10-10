@@ -54,7 +54,7 @@ and the draft head is read only by drafts, so they are listed separately.
 Rule of thumb: **the 25.6 B streamed parameters cost 2.98 GiB per bit per weight.** A uniform format at 2.0 / 2.5 / 3.0 / 3.5 / 4.0 /
 4.5 bpw streams 5.96 / 7.45 / 8.94 / 10.4 / 11.9 / 13.4 GiB per token. Q3 one-row decode moves its 10.7 GiB in 16.0 ms, about
 720 GB/s against a measured DRAM rate of 855 GB/s (896 GB/s theoretical), so at one row the token time is almost exactly bytes
-over bandwidth. The MLP is 67% of the streamed bytes in the `q3` artifact and 67% in `nvfp4`; the GDN input projections (`value_z`,
+over bandwidth. The MLP is 60% of the streamed bytes in the `q3` artifact and 67% in `nvfp4`; the GDN input projections (`value_z`,
 `query_key`) are 22% of the `q3` artifact because they sit at 5.25 and 4.25 bpw.
 
 ## 2. The four forms
@@ -100,7 +100,8 @@ loader uploads bytes as they are and never repacks. All multi-byte values little
   Qwen3.8-27B GSQ-RCO release; 1000 chunks of 4096 tokens, base model) for the `q3` and `nvfp4` conversions of the base
   checkpoint, and UkisAI's `imatrix-swift15-v1mix.gguf` (from `ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF`; 309 chunks of 4096
   tokens of web, reasoning, multilingual and code text) for the `nvfp4-compressed` conversion of Swift-1.5. Objects neither matrix covers (token embedding, LM head, draft head, MTP
-  layer) are searched with uniform weights.
+  layer) are searched with uniform weights. Both files lack the LM head because `llama-imatrix` records `output.weight` only
+  with `--process-output` (and the MTP `fc` only with `--nextn`); a re-run with those flags would cover them.
 - **Q3/Q4/Q5 (`grouped.py:search_group_codes_torch`)**: per group of 64, candidates are the RTN scale `amax/qmax`, and for each end
   `e` in {qmax, -qmin} and each of 19 steps `s` in -0.9..+0.9: scale = `amax/(e+s)`, round, then refit the scale by weighted least
   squares over the codes it produced, round the scale to binary16, requantize. The group keeps the candidate with the least weighted
