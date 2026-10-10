@@ -11,8 +11,9 @@ The family multiplies the inputs of a linear layer by an orthogonal (or invertib
 product is unchanged while activations lose their channel outliers and weights become approximately Gaussian ("incoherent").
 Most of the rotation is free: a residual-stream rotation R1 folds into the embedding, the norm weights, the LM head and every linear
 that reads from or writes to the residual. The rest runs online as fast Hadamards before down_proj, o_proj and (here) GDN
-out_proj. The best-supported results are for W4A4 with INT4 per-token activations: QuaRot/SpinQuant/FlatQuant keep Llama-2 70B
-within 0.2 to 0.5 WikiText-2 perplexity and Qwen2.5-32B within 0.5 to 1.6 (FlatQuant 5.80, QuaRot 6.54 to 6.95, BF16 5.32); for
+out_proj. The best-supported results are for W4A4 with INT4 per-token activations: with GPTQ weights, QuaRot/SpinQuant/FlatQuant keep
+Llama-2 70B within 0.2 to 0.5 WikiText-2 perplexity and Qwen2.5-32B within 0.5 to 1.6 (FlatQuant 5.80, QuaRot 6.54 to 6.95, BF16
+5.32); for
 weight-only 4-bit per-channel quantization rotation plus GPTQ closes the per-channel RTN gap (Llama-2 7B 7.2 to 5.6, FP 5.5). For
 Euhedral the verdict is narrow. (a) Weight-only: rotation cannot be applied without giving up the imatrix, because a signed Hadamard
 makes the diagonal importance exactly flat; group-64 Q3 gains only if the model's groups are heavy-tailed, and the measured P2E2
@@ -55,8 +56,8 @@ only when the consumer is linear.
 **HIGGS.** Hadamard rotation makes weights approximately N(0, σ²), so one MSE-optimal grid for the unit Gaussian serves every
 layer: pairs of rotated weights (vector size 2) are rounded to a 2^(2b) point grid with b in {2, 3, 4} and a per-group scale
 (FLUTE's `integrations/higgs.py`: grid shape [2^(bits·vector_size), vector_size], scales per `group_size`). The "linearity
-theorem" relates the per-layer squared error to the perplexity increase and drives a per-layer bit allocation; the method is
-data-free and runs on FLUTE lookup-table kernels. Accuracy tables were not retrievable here (section 3 notes the one secondary number).
+theorem" relates the per-layer squared error to the perplexity increase; the method is data-free and runs on FLUTE lookup-table
+kernels. Accuracy tables were not retrievable here (section 3 notes the one secondary number).
 
 **FlatQuant.** Per-linear learned affine transforms P = P1 ⊗ P2 (Kronecker, n1·n2 = n, SVD-parameterised with Cayley orthogonal
 factors and a learnable diagonal; `flatquant/trans_utils.py`) applied online to every linear input, including the normalized
