@@ -79,22 +79,21 @@ and SpinQuant quantize rotated keys per head with one scale, and why TurboQuant 
 engine already has this, so per-channel key scaling, pre-RoPE key statistics and dense-and-sparse outlier lists buy nothing here. What
 remains after rotation is per-token structure, which the per-16 E4M3 scale handles row by row.
 
-RoPE and the rotation do not commute, so a pre-RoPE cache needs either a per-key RoPE at read time (KVQuant's fused kernels) or a
+RoPE and the rotation do not commute, so a pre-RoPE cache needs a per-key RoPE at read time (KVQuant's fused kernels) or a
 position-dependent query rotation per key; both break the one-table exact-product lookup. With 64 of 256 dimensions rotated, 75% of a
 key is position-free anyway, and RoPE is orthogonal, so post-RoPE group statistics match pre-RoPE ones up to the mixing within the 32
-rotated pairs. Pre-RoPE placement only matters for schemes that fuse the rotation into `W_k` (RotateKV); the engine rotates online, so
-post-RoPE is right. The varjoranta vLLM port arrives at the same place from the other side: for partial-rotary Qwen3.6 models it uses
-a block-diagonal Walsh-Hadamard keeping the RoPE prefix and the content suffix under separate rotations [34]; the engine's full H256 is
-simpler and consistent because queries are rotated identically.
+rotated pairs. Pre-RoPE placement only matters when the rotation is fused into `W_k` (RotateKV); the engine rotates online. The
+varjoranta vLLM port handles partial-rotary Qwen3.6 models with a block-diagonal Walsh-Hadamard that keeps the RoPE prefix and the
+content suffix apart [34]; the engine's full H256 is simpler and consistent because queries are rotated identically.
 
 QK-norm matters too. A key row is `x / rms(x) * (1 + w)`, so its channel magnitudes are set by the norm weights and its norm is bounded
 by `16 * max(1 + w_d)`: this model's "outlier channels" are the large entries of `key_norm`, known at conversion time, and no key token
-can have an anomalous norm. Community measurements point the same way: Qwen2.5-7B (no QK-norm) has K_max/K_med above 250x in some
-layers [30] and a q4_0 key cache in llama.cpp takes WikiText perplexity from 7.96 to about 1590 (user report) [28], while Qwen3-8B's key
-variance is uniform across layers except layer 0 [28] and Qwen 3.6 and Gemma 4 keep KL below 0.04 with q8_0 and 0.087 to 0.117 with
-q4_0 caches [29]. Values are not normalized, so sink tokens (first token, massive-activation tokens [32]) can carry large value rows;
-per-row scaling absorbs the magnitude and the rotation flattens the within-row range. Keeping the first tokens at higher precision
-(KVQuant, KVSink [32]) is cheap insurance the page format could express as a per-page flag if the long-context test asks for it.
+can have an anomalous norm. Community data point the same way: Qwen2.5-7B (no QK-norm) has K_max/K_med above 250x in some layers [30]
+and a q4_0 key cache in llama.cpp takes its WikiText perplexity from 7.96 to about 1590 (user report) [28], while Qwen3-8B's key variance
+is uniform across layers except layer 0 [28] and Qwen 3.6 and Gemma 4 keep KL below 0.04 with q8_0 and 0.087 to 0.117 with q4_0 caches
+[29]. Values are not normalized, so sink tokens (first token, massive-activation tokens [32]) can carry large value rows; per-row
+scaling absorbs the magnitude and the rotation flattens the within-row range. Keeping the first tokens at higher precision (KVQuant,
+KVSink [32]) is cheap insurance a per-page flag could express if the long-context test asks for it.
 
 ### 2.4 Which lower-bit grids keep the products exact
 
@@ -123,19 +122,17 @@ digits. Laplacian, Student-t (nu = 4) and mixed-norm rows gave the same numbers 
 |---|---|---|---|---|
 | E2M1, E4M3 per 16 (today) | 4.5 | 0.095 | 20.4 | 1.00 |
 | INT4 midrise plus or minus 1..15, E4M3 per 16 | 4.5 | 0.081 | 21.9 | 0.85 |
-| INT4 midtread -8..7, E4M3 per 16 | 4.5 | 0.086 | 21.3 | 0.91 |
 | INT3 midrise plus or minus 1, 3, 5, 7, E4M3 per 16 | 3.5 | 0.171 | 15.3 | 1.80 |
 | INT3 midtread -4..3 (scale amax/3), E4M3 per 16 | 3.5 | 0.199 | 14.0 | 2.10 |
 | INT2 midrise plus or minus 1, 3, E4M3 per 16 | 2.5 | 0.400 | 8.0 | 4.2 |
-| Lloyd-Max 4-bit, FP16 norm per 256 | 4.06 | 0.097 | 20.3 | 1.02 |
 | Lloyd-Max 3-bit, FP16 norm per 256 | 3.06 | 0.185 | 14.7 | 1.95 |
 | Lloyd-Max 2-bit, FP16 norm per 256 | 2.06 | 0.342 | 9.3 | 3.6 |
 
 Three readings. Each bit removed costs about 6 dB, as rate-distortion predicts: 3.5 bpe carries 1.8x today's error, 2.5 bpe 4.2x. The
 E2M1 grid is 1.5 dB worse than a symmetric integer grid at the same 4.5 bpe on rotated rows (its 0.5 and 6 levels are rarely right once
 the group maximum sets the scale), so an INT4 cache at unchanged bytes is a free-quality candidate if the tables are rebuilt anyway.
-And TurboQuant-style norm scaling at 3.06 bpe is worse than INT3 with E4M3 per 16 at 3.5 bpe, which argues for keeping the per-16 scale
-(it also keeps the k16 alignment the kernels rely on) rather than buying the last 0.44 bits with a codebook.
+And norm scaling at 3.06 bpe (TurboQuant without QJL) is worse than INT3 with E4M3 per 16 at 3.5 bpe, so the per-16 scale, which also
+keeps the k16 alignment the kernels rely on, is worth its 0.44 bits.
 
 ### 2.5 Proposed row layouts (256-token pages, token-major, 4 heads per token)
 
@@ -205,9 +202,9 @@ No source gives RULER or needle tables at 128K for a 3-bit uniform or Hadamard-r
 | Ollama issue 15865 [19] | a kernel writing the GDN state in BF16 corrupts Qwen3.5/3.6 output each step; the MLX reference keeps FP32 |
 | exllamav3 PR 477 [20] | opt-in FP16 state storage to save VRAM; BF16 judged "not precise enough" |
 | transformers PR 49291 [21] | MiniMax lightning attention: decay factors at or above about 0.998 round to 1.0 in BF16, heads stop forgetting |
-| Kozyrev and Maiboroda [17] | NVFP4 W4A4 for the GDN half of a hybrid 27B matches BF16 within seed noise (MMLU-Pro, GSM8K, AIME'25, GPQA-Diamond, LiveCodeBench, RULER); injected error is forgotten by the recurrence and does not compound with context; the BF16 kernel floor is a 3.8e-3 median relative difference |
-| Quamba2 [15] | 8-bit SSM state caching with per-state-group scales (`ssm_state_scale` in `qChunkScan.py`); W4A8 Mamba2-8B at a 1.6% average accuracy drop |
-| dasc, LeapQuant, DAMP, SSDi8, Nemotron 3 Ultra [22] | 2026 work quantizes cached or checkpointed states (INT8 per (layer, head, key) at 3.88x; 1.19 bytes per element for GDN and KDA; FP16 channels where INT8 degrades; block-scaled INT8 with stochastic rounding) and dequantizes into FP32 before continuing; DAMP finds uniform INT8 or FP8 already degrading complex reasoning |
+| Kozyrev and Maiboroda [17] | NVFP4 W4A4 for the GDN half of a hybrid 27B matches BF16 within seed noise on MMLU-Pro, GSM8K, AIME'25, GPQA-Diamond, LiveCodeBench and RULER; injected error is forgotten by the recurrence and does not compound with context; the BF16 kernel floor is a 3.8e-3 median relative difference |
+| Quamba2 [15] | 8-bit SSM state caching with per-state-group scales (`ssm_state_scale` in `qChunkScan.py`); W4A8 Mamba2-8B loses 1.6% on average |
+| dasc, LeapQuant, DAMP, SSDi8, Nemotron 3 Ultra [22] | 2026 work quantizes cached or checkpointed states (INT8 per (layer, head, key) at 3.88x; 1.19 bytes per element for GDN and KDA; FP16 channels where INT8 degrades; block-scaled INT8 with stochastic rounding) and dequantizes into FP32 before continuing; DAMP finds uniform INT8 or FP8 already hurting complex reasoning |
 
 ## 4. Fit with Euhedral
 
@@ -215,14 +212,12 @@ No source gives RULER or needle tables at 128K for a 3-bit uniform or Hadamard-r
 
 1. **Row-exact 1 to 8 row decode.** The verifier twin (`euhedral_attention_decode_gqa_nvfp4_rows`) runs each row through `decode_block`
    with the same lookups as the one-row launch. INT3 and INT2 codes times E4M3 are exact in FP16 (2.4), so the lookup keeps its
-   "equals the FP32 product rounded to FP16" property and the twin stays bitwise. Lloyd-Max centroids would need 7-bit significands; a
-   zero point would need a second accumulation; both avoided.
+   "equals the FP32 product rounded to FP16" property and the twin stays bitwise.
 2. **A prefill route off the 102-TFLOPS path.** This constraint is about linears; prefill attention already expands tiles to FP16 and
    only its producer warps change.
 3. **Decode instruction budget.** The 3-bit A-fragment build is one `bfe`, one shared load from a 64-entry table and one `hmul2` per
-   code pair, today's count, plus a funnel shift for the two straddling pairs per 32 codes and 7 instead of 9 `cp.async` chunks per
-   key row; V expansion handles four pairs per 24-bit field instead of per word. Estimate: within 10% of today's expansion
-   instructions against 22% (INT3) or 44% (INT2) fewer bytes.
+   code pair, today's count, plus a funnel shift for the two straddling pairs per 32 codes, and 7 instead of 9 `cp.async` chunks per
+   key row. Estimate: within 10% of today's expansion instructions against 22% (INT3) or 44% (INT2) fewer bytes.
 4. **Determinism.** Encode is per row in FP32 with a fixed butterfly order and round-to-nearest; decode is a table. Graph replay and
    output hashes are unaffected.
 5. **Offline conversion only.** The KV format is not a tensor; it needs an artifact-level field (a KV-format ordinal in the EDRL
@@ -277,21 +272,21 @@ with INT3 / INT2. The GDN state (0.15 GiB), the 157 MiB of ReplaySSM buffers and
 ### 4.4 Long-context decode speed (estimates)
 
 Two effects. First, host-backed weights. `NVFP4_RESIDENCY.md` measures one-row decode at 48.1 tok/s resident, 45.4 with 512 MiB
-host-backed, 35.0 with 1 GiB and 19.2 with 2 GiB: the first 0.7 GiB or so hides under the GPU's own step time, the rest streams at the
-44 GB/s copy rate, so a step is roughly max(GPU time, host-backed bytes / 44 GB/s). The baseline's `nvfp4-compressed` figures fit this:
+host-backed, 35.0 with 1 GiB and 19.2 with 2 GiB: about the first 0.7 GiB hides under the GPU's own step time, the rest streams at the
+44 GB/s copy rate, so a step is roughly max(GPU time, host-backed bytes / 44 GB/s). The baseline's `nvfp4-compressed` figures fit:
 88 tok/s at 64K with 0.84 GiB (20 ms of copy per step, GPU-bound) and 52 at 128K with 1.97 GiB (about 48 ms of copy per step,
-copy-bound). Cutting the 128K host-backed set to 1.47 GiB (INT3 / INT3) makes the copy about 36 ms; to 1.22 GiB (INT3 / INT2) about
-30 ms, near the GPU's own 128K step time. Expected 128K decode: about 70 tok/s (INT3 / INT3) and about 80 (INT3 / INT2); INT2 / INT2
-gains little more because the step is then GPU-bound. For plain `nvfp4`, 2.8 to 2.05 GiB takes the copy from 68 to 50 ms per step and
-decode from the measured 30 tok/s to perhaps 40.
+copy-bound). Cutting the 128K host-backed set to 1.47 GiB (INT3 / INT3) makes the copy about 36 ms, to 1.22 GiB (INT3 / INT2) about
+30 ms, near the GPU's own 128K step time: expected 128K decode about 70 and about 80 tok/s respectively, with INT2 / INT2 gaining little
+more because the step is then GPU-bound. For plain `nvfp4`, 2.8 to 2.05 GiB takes the copy from 68 to 50 ms per step and decode from
+the measured 30 tok/s to perhaps 40.
 
 Second, attention bytes, the only effect for `q3`. From `ATTENTION_DECODE.md` the one-row kernel streams 72 MiB per layer at 64K in
 107 us (82% of DRAM rate), the 3-row verifier takes 308 us per layer, and a fused read of all three rows was bounded at a 19% saving,
-so the twin is partly bandwidth-bound. Scaled linearly to 128K, the 3-row twin costs about 9.9 ms per step over 16 layers, and the
-`q3` slowdown from 109 tok/s at 4K to 67 at 128K (+5.75 ms per token) is almost entirely this attention. With 22% (INT3 / INT3) or
-33% (INT3 / INT2) fewer bytes and a kernel between latency-bound and bandwidth-bound, the step saves 1 to 2.5 ms of about 24 ms: `q3`
-at 128K goes from 67 to roughly 70 to 75 tok/s (+4 to +12%). At 32K the attention share is a few percent and the gain is under 3%. The
-3-bit field extraction costs some of this back in the values warp unless tuned.
+so the twin is partly bandwidth-bound. Scaled linearly to 128K the twin costs about 9.9 ms per step over 16 layers, and the `q3`
+slowdown from 109 tok/s at 4K to 67 at 128K (+5.75 ms per token) is almost entirely this attention. With 22% (INT3 / INT3) or 33%
+(INT3 / INT2) fewer bytes and a kernel between latency-bound and bandwidth-bound, the step saves 1 to 2.5 ms of about 24 ms: `q3` at
+128K goes from 67 to roughly 70 to 75 tok/s (+4 to +12%); at 32K the attention share is a few percent and the gain under 3%. The 3-bit
+field extraction gives some of this back in the values warp unless tuned.
 
 ### 4.5 MTP, DFlash2 and the GDN state
 
@@ -302,14 +297,13 @@ against the base cache, so acceptance is the only coupling to measure.
 The GDN state stays FP32. Arithmetic: 48 layers x 3 MiB read and written per token is about 0.3 GiB, 2.5% of a 16 ms token, so BF16
 storage saves at most 1.2% of decode time and 72 MiB of device memory (plus 72 MiB of ReplaySSM checkpoint and 73 MiB per prefix-cache
 checkpoint, which would double the 27 checkpoints the 4 GiB arena holds). Against that: the delta rule
-`S <- alpha S + beta (v - alpha S k) k^T`, with alpha from `exp(-exp(A_log) softplus(a + dt_bias))`, forgets a per-step storage rounding
-error of relative size 2^-9 (BF16) at rate alpha, so the steady-state error is about 2^-9 / sqrt(1 - alpha^2): 7x the single rounding
-at alpha = 0.99 and 22x at alpha = 0.999, i.e. 1.4% to 4% of the state (estimate), well above the 3.8e-3 BF16 kernel floor that arXiv
-2609.04098 measures for this architecture class. FP16 storage (2^-12) would sit at 0.2 to 0.5%, which is why exllamav3 offers FP16 and
-not BF16, but it still changes every output against the FP32 reference, and the row-exact replay would then reproduce a worse state
-exactly. The 2026 state-compression papers all quantize checkpoints and dequantize into FP32 before continuing; the prefix cache's
-contract (a restored state equals a cold run buffer for buffer) rules that out here. The engine computes alpha and beta in FP32
-already, so the SGLang and transformers failure modes do not apply.
+`S <- alpha S + beta (v - alpha S k) k^T` forgets a per-step storage rounding error of relative size 2^-9 (BF16) at rate alpha, so the
+steady-state error is about 2^-9 / sqrt(1 - alpha^2): 7x the single rounding at alpha = 0.99 and 22x at alpha = 0.999, i.e. 1.4% to 4%
+of the state (estimate), well above the 3.8e-3 BF16 kernel floor measured in [17] for this architecture class. FP16 storage (2^-12)
+would sit at 0.2 to 0.5%, which is why exllamav3 offers FP16 and not BF16, but it still changes every output against the FP32 reference,
+and the row-exact replay would then reproduce a worse state exactly. The 2026 state-compression papers quantize checkpoints and
+dequantize into FP32 before continuing; the prefix cache's contract (a restored state equals a cold run buffer for buffer) rules that
+out here. The engine computes alpha and beta in FP32 already, so the SGLang and transformers failure modes do not apply.
 
 ### 4.6 FP4 attention for prefill
 
@@ -327,10 +321,10 @@ most 2% of TTFT and costs the prefill path's agreement with the oracle. Not reco
    test-build switch replaces `e2m1_encode` / `e2m1_magnitude` / `e2m1_pair_bits` and the scale divisor with the INT4-midrise, INT3-midrise
    and INT2-midrise grids (magnitude in the low nibble bits, sign in bit 3). Storage does not shrink, but every kernel then computes
    exactly the numerics of the candidate cache, exact twins included. Run `TeacherForcedQualityCudaIntegrationTest` and
-   `tools/compare_reference.py` for each grid and for E2M1 on the `q3` and `nvfp4-compressed` artifacts. This also measures, for the
-   first time, what the cache costs at all: the baseline compares artifacts against a BF16 llama.cpp run and kernels against the
-   engine's oracle, both through the NVFP4 cache. Go if INT3 / INT3 and INT3 / INT2 stay within KL 0.01 and 1 top-1 point of E2M1 (the
-   kernel drift floor is KL 3.4e-3 to 4.7e-3); no-go for a grid that doubles the E2M1 cache's KL against the BF16 reference.
+   `tools/compare_reference.py` for each grid and for E2M1 on `q3` and `nvfp4-compressed`. This also measures for the first time what
+   the cache costs at all, since the baseline's artifact and kernel comparisons both run through the NVFP4 cache. Go if INT3 / INT3 and
+   INT3 / INT2 stay within KL 0.01 and 1 top-1 point of E2M1 (the kernel drift floor is KL 3.4e-3 to 4.7e-3); no-go for a grid that
+   doubles the E2M1 cache's KL against the BF16 reference.
 2. **Row statistics** (Python, from a dump of the BF16 K and V rows of the quality document): relative error per layer and per K / V
    under each grid, group maxima, and whether layer 3 (the first attention layer) or sink positions need a higher-precision page.
    Decide INT4-midrise versus E2M1 at 4.5 bpe here.
@@ -350,8 +344,8 @@ most 2% of TTFT and costs the prefill path's agreement with the oracle. Not reco
   0.443) are bad, and Swift-1.5 is a reasoning fine-tune judged on a 1279-token document. The teacher-forced harness cannot see a
   long-generation failure; step 3 plus a chain-of-thought task must precede any artifact shipping a 3-bit cache.
 - **Head dimension 256 and 16 layers.** Nearly every published number is for head_dim 128 and 32 layers. The rotation argument gets
-  stronger at 256 (closer to Gaussian) and the cache is already a quarter of a dense model's, but the two reports on this architecture
-  family (0xSero on Qwen3.5-27B, varjoranta on Qwen3.6-27B) are community reconstruction cosines, not task accuracy.
+  stronger at 256 and the cache is already a quarter of a dense model's, but the two reports on this architecture family (0xSero on
+  Qwen3.5-27B, varjoranta on Qwen3.6-27B) are community reconstruction cosines, not task accuracy.
 - **Values at 2 bits.** The simulation puts INT2 at 4.2x today's error and the community ports put values as the bottleneck at 2 bits;
   the published support for 2-bit values is K4V2 on 7B models at 2K to 4K. INT3 / INT2 is the stretch target; INT3 / INT3 the plan.
 - **Sink and first-token rows.** The engine quantizes every row alike. KVQuant and KVSink keep the first tokens in FP16; a per-page
@@ -359,9 +353,8 @@ most 2% of TTFT and costs the prefill path's agreement with the oracle. Not reco
 - **Instruction cost of 3-bit fields.** The scores warp runs at about 0.1 instructions per cycle and the FA2 producers already lag the
   compute warps; funnel shifts could eat the byte saving at 16K and below. Measure before committing to 12-byte units.
 - **Which grid at 4.5 bpe.** INT4-midrise beats E2M1 by 1.5 dB on rotated rows in simulation; confirming it on real rows (step 2) would
-  improve today's artifacts at zero memory cost, but it changes the exact oracle and the meaning of every stored prefix-cache node.
-- **Prefix cache arena.** Smaller KV per token stores more KV per checkpoint, but each checkpoint's 147 MiB GDN state dominates; the KV
-  format does not move the 27-checkpoint limit.
+  improve today's artifacts at zero memory cost, but it changes the exact oracle and every stored prefix-cache node's meaning.
+- **Prefix cache arena.** Each checkpoint's 147 MiB GDN state dominates the arena; a smaller KV format does not move the 27-checkpoint limit.
 - **Unverified sources.** The TurboQuant table and the vLLM / Red Hat May 2026 study are cited as relayed by community READMEs; the
   LMSYS Qwen3.8-27B NVFP4-KV table was not retrieved; no RULER-128K table for a 3-bit cache was found.
 
@@ -386,8 +379,8 @@ most 2% of TTFT and costs the prefill path's agreement with the oracle. Not reco
 17. Kozyrev, Maiboroda. Why Gated DeltaNet Survives 4-Bit Quantization: NVFP4 W4A4 for the Recurrent Half of a Hybrid 27B LLM. arXiv:2609.04098.
 18. SGLang issue 38975. https://github.com/sgl-project/sglang/issues/38975
 19. Ollama issue 15865. https://github.com/ollama/ollama/issues/15865
-20. exllamav3 PR 477. https://github.com/turboderp-org/exllamav3/pull/477
-21. transformers PR 49291. https://github.com/huggingface/transformers/pull/49291
+20. exllamav3 pull request 477. https://github.com/turboderp-org/exllamav3/pull/477
+21. transformers pull request 49291. https://github.com/huggingface/transformers/pull/49291
 22. dasc, arXiv:2608.30386; LeapQuant, arXiv:2609.38166; DAMP, arXiv:2608.27513; Low-Discrepancy Dither for Quantized Recurrent State Caches, arXiv:2609.39185; SSDi8, arXiv:2608.21952; Nemotron 3 Ultra, arXiv:2606.15007.
 23. vLLM, Quantized KV Cache documentation (raw file read). https://github.com/vllm-project/vllm/blob/main/docs/features/quantization/quantized_kvcache.md
 24. vLLM blog, The State of FP8 KV-Cache and Attention Quantization in vLLM, 2026-04-22. https://vllm.ai/blog/2026-04-22-fp8-kvcache
@@ -402,4 +395,4 @@ most 2% of TTFT and costs the prefill path's agreement with the oracle. Not reco
 33. More Tokens, Lower Precision, arXiv:2412.12706; Kitty, arXiv:2511.18643; KVLinC, arXiv:2510.05373; D-Quant, arXiv:2609.19880; OScaR, arXiv:2605.19660; Accurate KV Cache Quantization with Outlier Tokens Tracing, arXiv:2505.10938 (ACL 2025).
 34. TurboQuant community ports (cloned; untrusted secondary sources): https://github.com/OnlyTerp/turboquant (`BENCHMARKS.md` relays the vLLM / Red Hat study at https://blog.vllm.ai/2026/05/11/turboquant.html, not fetched); https://github.com/0xSero/turboquant ; https://github.com/tonbistudio/turboquant-pytorch ; https://github.com/varjoranta/turboquant-vllm ; https://github.com/AmesianX/TurboQuant.
 35. RULER: What's the Real Context Size of Your Long-Context Language Models? Hsieh et al. 2024 (arXiv ID not verified in this search).
-36. Euhedral, branch `perf/mtp-gated-depth`: `docs/ATTENTION_DECODE.md`, `docs/PREFILL_MX.md`, `docs/MTP_CONTRACT.md`, `docs/MTP_VERIFIER.md`, `docs/MTP_SPECULATIVE.md`, `docs/PREFIX_CACHE.md`, `docs/NVFP4_RESIDENCY.md`, `docs/DFLASH2.md`; `native/src/attention/nvfp4_kv.cuh`, `nvfp4_pipe.cuh`, `kv_append.cuh`, `nvfp4_decode_gqa.cuh`, `nvfp4_prefill_fa2.cuh`, `qk_norm_rope.cuh`; `native/src/gdn/recurrence.cuh`; `ArtifactProfile.java`.
+36. Euhedral, branch `perf/mtp-gated-depth`: the docs named in the scope note plus `docs/MTP_SPECULATIVE.md`; `native/src/attention/nvfp4_kv.cuh`, `nvfp4_pipe.cuh`, `kv_append.cuh`, `nvfp4_decode_gqa.cuh`, `nvfp4_prefill_fa2.cuh`, `qk_norm_rope.cuh`; `native/src/gdn/recurrence.cuh`; `ArtifactProfile.java`.
