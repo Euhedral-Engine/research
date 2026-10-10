@@ -26,8 +26,8 @@ The converter keeps the text tower and the MTP draft layer (785 objects) and dro
 | Hidden / FFN intermediate | 5120 / 17408, SwiGLU |
 | Vocabulary | 248,320 rows (tokenizer uses 248,077) |
 | Attention | 24 query heads x 256, 4 KV heads x 256 (GQA 6:1), q/k RMSNorm, partial RoPE (64 rotary dims, theta 1e7), sigmoid output gate ("gate" rows packed with q in `q_proj`) |
-| GDN | `in_proj_qkv` 10240 rows = q 2048 + k 2048 (16 key heads x 128) + v 6144 (48 value heads x 128); `in_proj_z` 6144; `in_proj_a`, `in_proj_b` 48 rows each; conv1d kernel 4; `A_log`, `dt_bias` 48; `out_proj` 5120 x 6144; recurrent state 48 x 128 x 128 FP32 per layer |
-| MTP | `mtp.fc` 5120 x 10240 plus one full-attention decoder block; no own embedding or LM head; one layer applied recursively (depth 2 on Q3 artifacts, 4 on NVFP4 artifacts) |
+| GDN | `in_proj_qkv` 10240 rows = q 2048 + k 2048 (16 key heads x 128) + v 6144 (48 value heads x 128); `in_proj_z` 6144; `in_proj_a`, `in_proj_b` 48 rows each; conv1d kernel 4; `A_log`, `dt_bias` 48; `out_proj` 5120 x 6144; gated RMSNorm weight `gdn/norm` is one 128-vector shared by the 48 value heads; recurrent state 48 x 128 x 128 FP32 per layer |
+| MTP | `mtp.fc` 5120 x 10240 plus one full-attention decoder block; no own embedding or LM head; one layer applied recursively (depth 2 on Q3 artifacts, 4 on NVFP4 artifacts, per `ArtifactProfile.draftLength`; the depth 3 still named in `docs/MTP_CONTRACT.md` and `docs/MTP_SPECULATIVE.md` is stale) |
 | Norms | all `(1 + w)` RMSNorm; stored BF16 |
 
 ### Parameter inventory of what decode streams every token
